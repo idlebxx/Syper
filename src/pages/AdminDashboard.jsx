@@ -126,3 +126,46 @@ export default function AdminDashboard() {
                             </button>
                             <button 
                               onClick={() => updateOrderStatus(order.id, 'rejected')} 
+                              className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                            >
+                              رفض
+                            </button>
+                          </>
+                        )}
+                        {order.status === 'verified' && (
+                          <button 
+                            onClick={() => updateOrderStatus(order.id, 'completed')} 
+                            className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600"
+                          >
+                            إكمال
+                          </button>
+                        )}
+                        {order.receipt_url && (
+                          <a 
+                            href={order.receipt_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600"
+                          >
+                            الإيصال
+                          </a>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {orders.length === 0 && (
+                  <tr>
+                    <td colSpan="5" className="text-center py-8 text-gray-500">
+                      لا توجد طلبات حالياً
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
