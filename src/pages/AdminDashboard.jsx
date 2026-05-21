@@ -6,6 +6,19 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState([])
   const [activeTab, setActiveTab] = useState('products')
   const [loading, setLoading] = useState(true)
+  
+  // State لنافذة إضافة/تعديل المنتج
+  const [showProductModal, setShowProductModal] = useState(false)
+  const [editingProduct, setEditingProduct] = useState(null)
+  const [productForm, setProductForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    category: '',
+    image_url: '',
+    file_url: ''
+  })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadProducts()
@@ -26,6 +39,91 @@ export default function AdminDashboard() {
   async function updateOrderStatus(orderId, status) {
     await supabase.from('orders').update({ status }).eq('id', orderId)
     loadOrders()
+  }
+
+  // فتح نافذة إضافة منتج جديد
+  function openAddModal() {
+    setEditingProduct(null)
+    setProductForm({
+      name: '',
+      description: '',
+      price: '',
+      category: '',
+      image_url: '',
+      file_url: ''
+    })
+    setShowProductModal(true)
+  }
+
+  // فتح نافذة تعديل منتج
+  function openEditModal(product) {
+    setEditingProduct(product)
+    setProductForm({
+      name: product.name || '',
+      description: product.description || '',
+      price: product.price || '',
+      category: product.category || '',
+      image_url: product.image_url || '',
+      file_url: product.file_url || ''
+    })
+    setShowProductModal(true)
+  }
+
+  // حفظ المنتج (إضافة أو تعديل)
+  async function saveProduct() {
+    if (!productForm.name.trim() || !productForm.price) {
+      alert('الرجاء إدخال اسم المنتج والسعر')
+      return
+    }
+
+    setSaving(true)
+
+    const productData = {
+      name: productForm.name.trim(),
+      description: productForm.description.trim() || null,
+      price: parseFloat(productForm.price),
+      category: productForm.category.trim() || null,
+      image_url: productForm.image_url.trim() || null,
+      file_url: productForm.file_url.trim() || null
+    }
+
+    let error
+    if (editingProduct) {
+      // تعديل منتج موجود
+      const { error: updateError } = await supabase
+        .from('products')
+        .update(productData)
+        .eq('id', editingProduct.id)
+      error = updateError
+    } else {
+      // إضافة منتج جديد
+      const { error: insertError } = await supabase
+        .from('products')
+        .insert([productData])
+      error = insertError
+    }
+
+    if (error) {
+      alert('حدث خطأ: ' + error.message)
+    } else {
+      alert(editingProduct ? 'تم تعديل المنتج بنجاح' : 'تم إضافة المنتج بنجاح')
+      setShowProductModal(false)
+      loadProducts()
+    }
+    setSaving(false)
+  }
+
+  // حذف منتج
+  async function deleteProduct(productId, productName) {
+    if (confirm(`هل أنت متأكد من حذف المنتج "${productName}"؟`)) {
+      const { error } = await supabase.from('products').delete().eq('id', productId)
+      if (error) {
+        alert('حدث خطأ: ' + error.message)
+      } else {
+        alert('تم حذف المنتج بنجاح')
+        loadProducts()
+      }
+    }
   }
 
   const statusColors = {
@@ -61,31 +159,79 @@ export default function AdminDashboard() {
         </button>
       </div>
       
+      {/* قسم المنتجات */}
       {activeTab === 'products' && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-right">المنتج</th>
-                  <th className="px-4 py-3 text-right">السعر</th>
-                  <th className="px-4 py-3 text-right">التصنيف</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.map(product => (
-                  <tr key={product.id} className="border-t">
-                    <td className="px-4 py-3">{product.name}</td>
-                    <td className="px-4 py-3">${product.price}</td>
-                    <td className="px-4 py-3">{product.category || '-'}</td>
+        <div>
+          {/* زر إضافة منتج جديد */}
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={openAddModal}
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition flex items-center gap-2"
+            >
+              <span className="text-xl">+</span> إضافة منتج جديد
+            </button>
+          </div>
+
+          {/* جدول المنتجات */}
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-right">#</th>
+                    <th className="px-4 py-3 text-right">اسم المنتج</th>
+                    <th className="px-4 py-3 text-right">الوصف</th>
+                    <th className="px-4 py-3 text-right">السعر</th>
+                    <th className="px-4 py-3 text-right">التصنيف</th>
+                    <th className="px-4 py-3 text-right">الإجراءات</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="6" className="text-center py-8">جاري التحميل...</td>
+                    </tr>
+                  ) : products.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="text-center py-8 text-gray-500">
+                        لا توجد منتجات. اضغط "إضافة منتج جديد" لإضافة أول منتج
+                      </td>
+                    </tr>
+                  ) : (
+                    products.map((product, index) => (
+                      <tr key={product.id} className="border-t hover:bg-gray-50">
+                        <td className="px-4 py-3">{index + 1}</td>
+                        <td className="px-4 py-3 font-medium">{product.name}</td>
+                        <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{product.description || '-'}</td>
+                        <td className="px-4 py-3 text-blue-600 font-bold">${product.price}</td>
+                        <td className="px-4 py-3">{product.category || '-'}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openEditModal(product)}
+                              className="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600"
+                            >
+                              تعديل
+                            </button>
+                            <button
+                              onClick={() => deleteProduct(product.id, product.name)}
+                              className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
       
+      {/* قسم الطلبات */}
       {activeTab === 'orders' && (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="overflow-x-auto">
@@ -166,6 +312,104 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* نافذة إضافة/تعديل المنتج (Modal) */}
+      {showProductModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <h2 className="text-xl font-bold mb-4">
+                {editingProduct ? 'تعديل المنتج' : 'إضافة منتج جديد'}
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">اسم المنتج *</label>
+                  <input
+                    type="text"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm({...productForm, name: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="مثال: أداة اختبار الاختراق"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">الوصف</label>
+                  <textarea
+                    value={productForm.description}
+                    onChange={(e) => setProductForm({...productForm, description: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    rows="3"
+                    placeholder="وصف المنتج..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">السعر *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={productForm.price}
+                    onChange={(e) => setProductForm({...productForm, price: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="0.00"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">التصنيف</label>
+                  <input
+                    type="text"
+                    value={productForm.category}
+                    onChange={(e) => setProductForm({...productForm, category: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="مثال: tools, courses, software"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">رابط الصورة</label>
+                  <input
+                    type="url"
+                    value={productForm.image_url}
+                    onChange={(e) => setProductForm({...productForm, image_url: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="https://..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">رابط التحميل</label>
+                  <input
+                    type="url"
+                    value={productForm.file_url}
+                    onChange={(e) => setProductForm({...productForm, file_url: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={saveProduct}
+                  disabled={saving}
+                  className="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {saving ? 'جاري الحفظ...' : (editingProduct ? 'تحديث' : 'إضافة')}
+                </button>
+                <button
+                  onClick={() => setShowProductModal(false)}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-md hover:bg-gray-400"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
-}
+    }
