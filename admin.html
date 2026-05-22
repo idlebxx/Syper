@@ -10,74 +10,157 @@
 <body class="bg-gray-100">
 
 <div class="container mx-auto px-4 py-8" id="app">
-    <!-- المحتوى راح يظهر هنا -->
+    <div class="text-center py-20">جاري التحميل...</div>
 </div>
 
 <script>
     // معلومات Supabase الخاصة بك
     const supabaseUrl = 'https://ohfsvwuyoefbyzlyierz.supabase.co';
     const supabaseKey = 'sb_publishable_MwgZ-xcBr9kvJRuO75NNcQ_bWpf2oJF';
-    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
     let currentUser = null;
 
-    // التحقق من تسجيل الدخول
     async function checkAuth() {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-            window.location.href = '/login';
-            return;
+        try {
+            // جلب المستخدم الحالي
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            
+            if (userError || !user) {
+                document.getElementById('app').innerHTML = `
+                    <div class="bg-yellow-100 text-yellow-700 p-4 rounded text-center">
+                        ⚠️ يجب تسجيل الدخول أولاً.<br><br>
+                        <a href="/login" class="bg-blue-600 text-white px-4 py-2 rounded inline-block">اذهب لتسجيل الدخول</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            currentUser = user;
+            
+            // جلب صلاحيات المستخدم
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+            
+            if (profile?.role !== 'admin') {
+                document.getElementById('app').innerHTML = `
+                    <div class="bg-red-100 text-red-700 p-4 rounded text-center">
+                        ❌ غير مصرح لك بالدخول. حسابك ليس مديراً.<br>
+                        <a href="/" class="text-blue-600 underline">العودة للرئيسية</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            // عرض لوحة التحكم
+            showDashboard();
+            loadProducts();
+            
+        } catch (err) {
+            document.getElementById('app').innerHTML = `<div class="bg-red-100 text-red-700 p-4 rounded">خطأ: ${err.message}</div>`;
         }
-        currentUser = user;
-        
-        // جلب صلاحيات المستخدم من جدول profiles
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-        
-        if (profile?.role !== 'admin') {
-            document.getElementById('app').innerHTML = '<div class="bg-red-100 text-red-700 p-4 rounded text-center">❌ غير مصرح لك بالدخول. حسابك ليس مديراً.</div>';
-            return;
-        }
-        
-        loadProducts();
-        loadOrders();
     }
 
-    // جلب المنتجات
+    function showDashboard() {
+        document.getElementById('app').innerHTML = `
+            <div class="bg-white rounded-lg shadow">
+                <div class="flex justify-between items-center p-4 border-b flex-wrap gap-2">
+                    <h1 class="text-2xl font-bold">لوحة التحكم</h1>
+                    <div class="flex gap-3 items-center">
+                        <span class="text-sm text-gray-600">${currentUser?.email || ''}</span>
+                        <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded text-sm">خروج</button>
+                    </div>
+                </div>
+                
+                <div class="flex border-b">
+                    <button onclick="showTab('products')" id="tab-products-btn" class="px-4 py-2 text-blue-600 border-b-2 border-blue-600">المنتجات</button>
+                    <button onclick="showTab('orders')" id="tab-orders-btn" class="px-4 py-2 text-gray-600">الطلبات (<span id="orders-count">0</span>)</button>
+                </div>
+                
+                <div id="products-panel" class="p-4">
+                    <div class="flex justify-end mb-4">
+                        <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded">+ إضافة منتج</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr><th class="p-3 text-right">المنتج</th><th class="p-3 text-right">الوصف</th><th class="p-3 text-right">السعر</th><th class="p-3 text-right">التصنيف</th><th class="p-3 text-right"></th></tr>
+                            </thead>
+                            <tbody id="products-table-body"><tr><td colspan="5" class="text-center p-4">جاري التحميل...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div id="orders-panel" class="p-4 hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr><th class="p-3 text-right">العميل</th><th class="p-3 text-right">المنتج</th><th class="p-3 text-right">السعر</th><th class="p-3 text-right">الحالة</th><th class="p-3 text-right"></th></tr>
+                            </thead>
+                            <tbody id="orders-table-body"><tr><td colspan="5" class="text-center p-4">جاري التحميل...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        window.showTab = (tab) => {
+            const productsPanel = document.getElementById('products-panel');
+            const ordersPanel = document.getElementById('orders-panel');
+            const productsBtn = document.getElementById('tab-products-btn');
+            const ordersBtn = document.getElementById('tab-orders-btn');
+            
+            if (tab === 'products') {
+                productsPanel.classList.remove('hidden');
+                ordersPanel.classList.add('hidden');
+                productsBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                productsBtn.classList.remove('text-gray-600');
+                ordersBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                ordersBtn.classList.add('text-gray-600');
+            } else {
+                productsPanel.classList.add('hidden');
+                ordersPanel.classList.remove('hidden');
+                ordersBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                ordersBtn.classList.remove('text-gray-600');
+                productsBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                productsBtn.classList.add('text-gray-600');
+                loadOrders();
+            }
+        };
+    }
+
     async function loadProducts() {
         const { data } = await supabase.from('products').select('*').order('created_at', { ascending: false });
-        displayProducts(data || []);
-    }
-
-    // عرض المنتجات في جدول
-    function displayProducts(products) {
-        const productsHtml = products.map(p => `
+        const tbody = document.getElementById('products-table-body');
+        
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-500">لا توجد منتجات. اضف منتجاً جديداً</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.map(p => `
             <tr class="border-t">
-                <td class="p-3">${p.name}</td>
-                <td class="p-3">${p.description?.substring(0, 50) || '-'}</td>
+                <td class="p-3">${escapeHtml(p.name)}</td>
+                <td class="p-3">${escapeHtml(p.description?.substring(0, 50) || '-')}</td>
                 <td class="p-3 text-blue-600 font-bold">$${p.price}</td>
-                <td class="p-3">${p.category || '-'}</td>
+                <td class="p-3">${escapeHtml(p.category || '-')}</td>
                 <td class="p-3">
                     <button onclick="deleteProduct(${p.id})" class="bg-red-500 text-white px-3 py-1 rounded text-sm">حذف</button>
                 </td>
             </tr>
         `).join('');
-        
-        document.getElementById('products-table-body').innerHTML = productsHtml;
     }
 
-    // حذف منتج
     window.deleteProduct = async (id) => {
         if (!confirm('هل أنت متأكد من الحذف؟')) return;
         await supabase.from('products').delete().eq('id', id);
         loadProducts();
     };
 
-    // عرض نموذج إضافة منتج
-    function showAddForm() {
+    window.showAddForm = () => {
         const name = prompt('اسم المنتج:');
         if (!name) return;
         const description = prompt('الوصف:');
@@ -88,21 +171,25 @@
         supabase.from('products').insert([{ name, description, price, category }]).then(() => {
             alert('تمت الإضافة');
             loadProducts();
-        });
-    }
+        }).catch(err => alert('خطأ: ' + err.message));
+    };
 
-    // جلب الطلبات
     async function loadOrders() {
         const { data } = await supabase.from('orders').select('*, product:products(*)').order('created_at', { ascending: false });
-        displayOrders(data || []);
-    }
-
-    // عرض الطلبات
-    function displayOrders(orders) {
-        const ordersHtml = orders.map(o => `
+        const tbody = document.getElementById('orders-table-body');
+        const countSpan = document.getElementById('orders-count');
+        
+        if (countSpan) countSpan.innerText = data?.length || 0;
+        
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-500">لا توجد طلبات</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.map(o => `
             <tr class="border-t">
-                <td class="p-3">${o.customer_name}<br><small>${o.customer_email}</small></td>
-                <td class="p-3">${o.product?.name || '-'}</td>
+                <td class="p-3">${escapeHtml(o.customer_name)}<br><small class="text-gray-500">${escapeHtml(o.customer_email)}</small></td>
+                <td class="p-3">${escapeHtml(o.product?.name || '-')}</td>
                 <td class="p-3">$${o.product?.price || '-'}</td>
                 <td class="p-3">
                     <span class="px-2 py-1 rounded text-xs ${getStatusClass(o.status)}">${getStatusText(o.status)}</span>
@@ -117,9 +204,6 @@
                 </td>
             </tr>
         `).join('');
-        
-        document.getElementById('orders-table-body').innerHTML = ordersHtml;
-        document.getElementById('orders-count').innerText = orders.length;
     }
 
     window.updateOrderStatus = async (id, status) => {
@@ -147,82 +231,22 @@
         return texts[status] || status;
     }
 
-    // تسجيل الخروج
     window.logout = async () => {
         await supabase.auth.signOut();
         window.location.href = '/';
     };
 
-    // واجهة HTML
-    document.getElementById('app').innerHTML = `
-        <div class="bg-white rounded-lg shadow">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h1 class="text-2xl font-bold">لوحة التحكم</h1>
-                <div>
-                    <span class="text-sm text-gray-600 ml-3">${currentUser?.email || ''}</span>
-                    <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded text-sm">خروج</button>
-                </div>
-            </div>
-            
-            <!-- أزرار التنقل -->
-            <div class="flex border-b">
-                <button onclick="showTab('products')" id="tab-products-btn" class="px-4 py-2 text-blue-600 border-b-2 border-blue-600">المنتجات</button>
-                <button onclick="showTab('orders')" id="tab-orders-btn" class="px-4 py-2 text-gray-600">الطلبات (<span id="orders-count">0</span>)</button>
-            </div>
-            
-            <!-- قسم المنتجات -->
-            <div id="products-panel" class="p-4">
-                <div class="flex justify-end mb-4">
-                    <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded">+ إضافة منتج</button>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-gray-50">
-                            <tr><th class="p-3 text-right">المنتج</th><th class="p-3 text-right">الوصف</th><th class="p-3 text-right">السعر</th><th class="p-3 text-right">التصنيف</th><th class="p-3 text-right"></th></tr>
-                        </thead>
-                        <tbody id="products-table-body"></tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <!-- قسم الطلبات -->
-            <div id="orders-panel" class="p-4 hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-gray-50">
-                            <tr><th class="p-3 text-right">العميل</th><th class="p-3 text-right">المنتج</th><th class="p-3 text-right">السعر</th><th class="p-3 text-right">الحالة</th><th class="p-3 text-right"></th></tr>
-                        </thead>
-                        <tbody id="orders-table-body"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    window.showTab = (tab) => {
-        const productsPanel = document.getElementById('products-panel');
-        const ordersPanel = document.getElementById('orders-panel');
-        const productsBtn = document.getElementById('tab-products-btn');
-        const ordersBtn = document.getElementById('tab-orders-btn');
-        
-        if (tab === 'products') {
-            productsPanel.classList.remove('hidden');
-            ordersPanel.classList.add('hidden');
-            productsBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-            productsBtn.classList.remove('text-gray-600');
-            ordersBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-            ordersBtn.classList.add('text-gray-600');
-        } else {
-            productsPanel.classList.add('hidden');
-            ordersPanel.classList.remove('hidden');
-            ordersBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-            ordersBtn.classList.remove('text-gray-600');
-            productsBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-            productsBtn.classList.add('text-gray-600');
-            loadOrders();
-        }
-    };
-    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // تشغيل
     checkAuth();
 </script>
 
